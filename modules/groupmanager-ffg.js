@@ -1,5 +1,5 @@
-import {xpLogEarn} from "./helpers/actor-helpers.js";
-
+import { xpLogEarn } from "./helpers/actor-helpers.js";
+import XPHelpers from "./helpers/xp-helpers.js";
 export class GroupManagerLayer extends CanvasLayer {
   constructor() {
     super();
@@ -94,17 +94,17 @@ export class GroupManager extends FormApplication {
         }
         return false;
       })
-      .forEach((c) => {
-        try {
-          obligationRangeStart = this._addCharacterObligationDuty(c, obligationRangeStart, c.system.obligationlist, "obligations");
-          dutyRangeStart = this._addCharacterObligationDuty(c, dutyRangeStart, c.system.dutylist, "duties");
-          characters.push(c);
-          // obligationRangeStart = this._addCharacterObligations(c, obligationRangeStart);
-          // dutyRangeStart = this._addCharacterDuties(c, dutyRangeStart);
-        } catch (err) {
-          CONFIG.logger.warn(`Unable to add player (${c.name}) to obligation/duty table`, err);
-        }
-      });
+        .forEach((c) => {
+          try {
+            obligationRangeStart = this._addCharacterObligationDuty(c, obligationRangeStart, c.system.obligationlist, "obligations");
+            dutyRangeStart = this._addCharacterObligationDuty(c, dutyRangeStart, c.system.dutylist, "duties");
+            characters.push(c);
+            // obligationRangeStart = this._addCharacterObligations(c, obligationRangeStart);
+            // dutyRangeStart = this._addCharacterDuties(c, dutyRangeStart);
+          } catch (err) {
+            CONFIG.logger.warn(`Unable to add player (${c.name}) to obligation/duty table`, err);
+          }
+        });
     }
 
     const dPool = { light: game.settings.get("starwarsffg", "dPoolLight"), dark: game.settings.get("starwarsffg", "dPoolDark") };
@@ -308,7 +308,7 @@ export class GroupManager extends FormApplication {
     await this._setupCombat(cbt);
     let token = await this._getCharacterToken(game.actors.get(character));
     if (token && !token.inCombat) {
-        await game.combat.createEmbeddedDocuments('Combatant', [{ tokenId: token.id }]);
+      await game.combat.createEmbeddedDocuments('Combatant', [{ tokenId: token.id }]);
       //await game.combat.createCombatant({ tokenId: token.id });
     } else {
       ui.notifications.warn(`User has no active Token in the current scene.`);
@@ -323,7 +323,7 @@ export class GroupManager extends FormApplication {
   async _setupCombat(cbt) {
     // If no combat encounter is active, create one.
     if (!cbt) {
-      cbt = await Combat.create({scene: canvas.scene.id, active: true});
+      cbt = await Combat.create({ scene: canvas.scene.id, active: true });
     }
   }
 
@@ -345,12 +345,10 @@ export class GroupManager extends FormApplication {
             const container = document.getElementById(id);
             const amount = container.querySelector('input[name="amount"]');
             const note = container.querySelector('input[name="note"]').value;
-            const available = +character.system.experience.available + +amount.value;
-            const total = +character.system.experience.total + +amount.value;
-            character.update({ ["system.experience.total"]: +character.system.experience.total + +amount.value });
-            character.update({ ["system.experience.available"]: +character.system.experience.available + +amount.value });
-            await xpLogEarn(character, amount.value, available, total, note);
-            ui.notifications.info(`Granted ${amount.value} XP to ${character.name}.`);
+            await XPHelpers.changeActorXpAsync(character, amount.value, async (updatedTotalXp, updatedAvailableXp) => {
+              await xpLogEarn(character, amount.value, updatedAvailableXp, updatedTotalXp, note);
+              ui.notifications.info(`Granted ${amount.value} XP to ${character.name}.`);
+            });
           },
         },
         two: {
@@ -381,12 +379,11 @@ export class GroupManager extends FormApplication {
             const note = container.querySelector('input[name="note"]').value;
             for (const c of characters) {
               const character = game.actors.get(c);
-              const available = +character.system.experience.available + +amount.value;
-              const total = +character.system.experience.total + +amount.value;
-              character.update({ ["system.experience.total"]: +character.system.experience.total + +amount.value });
-              character.update({ ["system.experience.available"]: +character.system.experience.available + +amount.value });
-              await xpLogEarn(character, amount.value, available, total, note);
-              ui.notifications.info(`Granted ${amount.value} XP to ${character.name}.`);
+              await XPHelpers.changeActorXpAsync(character, amount.value, async (updatedTotalXp, updatedAvailableXp) => {
+                await xpLogEarn(character, amount.value, updatedAvailableXp, updatedTotalXp, note);
+                ui.notifications.info(`Granted ${amount.value} XP to ${character.name}.`);
+              });
+
             }
           },
         },

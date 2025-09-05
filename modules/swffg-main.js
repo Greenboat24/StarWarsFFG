@@ -48,7 +48,8 @@ import {register_dice_enricher, register_oggdude_tag_enricher, register_roll_tag
 import {drawAdversaryCount, drawMinionCount, registerTokenControls} from "./helpers/token.js";
 import {handleUpdate} from "./swffg-migration.js";
 import SWAImporter from "./importer/swa-importer.js";
-
+import XPHelpers from "./helpers/xp-helpers.js";
+import XPPurchaseHelpers from "./helpers/purchase-helpers.js";
 /* -------------------------------------------- */
 /*  Foundry VTT Initialization                  */
 /* -------------------------------------------- */
@@ -81,6 +82,8 @@ Hooks.once("init", async function () {
     RollFFG,
     DiceHelpers,
     RollBuilderFFG,
+    XPHelpers,
+    XPPurchaseHelpers,
     addons: {
       PopoutEditor,
     },

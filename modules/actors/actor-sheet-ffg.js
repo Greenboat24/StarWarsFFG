@@ -7,7 +7,7 @@ import DiceHelpers from "../helpers/dice-helpers.js";
 import ActorOptions from "./actor-ffg-options.js";
 import ImportHelpers from "../importer/import-helpers.js";
 import ModifierHelpers from "../helpers/modifiers.js";
-import ActorHelpers, {xpLogEarn, xpLogSpend} from "../helpers/actor-helpers.js";
+import ActorHelpers, { xpLogEarn, xpLogSpend } from "../helpers/actor-helpers.js";
 import ItemHelpers from "../helpers/item-helpers.js";
 import EmbeddedItemHelpers from "../helpers/embeddeditem-helpers.js";
 import {
@@ -18,11 +18,13 @@ import {
   handlePilotCheck,
   buildPilotRoll
 } from "../helpers/crew.js";
-import {DicePoolFFG} from "../dice/pool.js";
-import {get_dice_pool} from "../helpers/dice-helpers.js";
-import {itemPillHover} from "../swffg-main.js";
-
+import { DicePoolFFG } from "../dice/pool.js";
+import { get_dice_pool } from "../helpers/dice-helpers.js";
+import { itemPillHover } from "../swffg-main.js";
+import XPHelpers from "../helpers/xp-helpers.js";
+import XPPurchaseHelpers from "../helpers/purchase-helpers.js";
 export class ActorSheetFFG extends ActorSheet {
+
   constructor(...args) {
     super(...args);
     /**
@@ -59,13 +61,13 @@ export class ActorSheetFFG extends ActorSheet {
   async _onDropItem(event, data) {
     if (data?.type === "Item") {
       // this is the stock implementation, except that we do not pass "true" to item.toObject
-      if ( !this.actor.isOwner ) return false;
+      if (!this.actor.isOwner) return false;
       const item = await Item.implementation.fromDropData(data);
       // do not Draw values from the underlying data source rather than transformed values - we want to use adjusted values
       const itemData = item.toObject(false);
 
       // Handle item sorting within the same Actor
-      if ( this.actor.uuid === item.parent?.uuid ) return this._onSortItem(event, itemData);
+      if (this.actor.uuid === item.parent?.uuid) return this._onSortItem(event, itemData);
 
       if (["character", "minion", "rival"].includes(this.actor.type) && ["itemmodifier", "itemattachment"].includes(itemData.type)) {
         ui.notifications.warn("You cannot add Item Modifiers or Attachments directly to actors.");
@@ -73,21 +75,10 @@ export class ActorSheetFFG extends ActorSheet {
       }
 
       if (this.actor.type === "character" && itemData.type === "species") {
-        // add starting XP from species
-        const curAvailable = parseInt(this.actor.system?.experience?.available);
-        const curTotal = parseInt(this.actor.system?.experience?.total);
         const startingXP = parseInt(itemData.system?.startingXP);
-        await this.actor.update(
-          {
-            system: {
-              experience: {
-                available: curAvailable + startingXP,
-                total: curTotal + startingXP,
-              }
-            }
-          }
-        );
-        await xpLogEarn(this.actor, startingXP, curAvailable + startingXP, curTotal + startingXP, game.i18n.format("SWFFG.GrantXPSpecies", {species: itemData.name}) );
+        await XPHelpers.changeActorXpAsync(this.actor, startingXP, async (updatedTotalXP, updatedAvailableXP) => {
+          await xpLogEarn(this.actor, startingXP, updatedAvailableXP, updatedTotalXP, game.i18n.format("SWFFG.GrantXPSpecies", { species: itemData.name }));
+        });
       }
 
       if (this.actor.type === "character" && ["talent", "specialization", "signatureability", "forcepower"].includes(itemData.type)) {
@@ -95,40 +86,40 @@ export class ActorSheetFFG extends ActorSheet {
         const availableXP = this.actor.system.experience.available;
         if (cost > 0 && cost < availableXP) {
           new Dialog(
-          {
-            title: game.i18n.localize("SWFFG.DragDrop.Title"),
-            buttons: {
-              purchase: {
-                icon: '<i class="fas fa-hourglass"></i>',
-                label: game.i18n.localize("SWFFG.DragDrop.PurchaseItem"),
-                callback: async (that) => {
-                  if (cost > 0) {
-                    await this.object.update({
-                      system: {
-                        experience: {
-                          available: availableXP - cost,
+            {
+              title: game.i18n.localize("SWFFG.DragDrop.Title"),
+              buttons: {
+                purchase: {
+                  icon: '<i class="fas fa-hourglass"></i>',
+                  label: game.i18n.localize("SWFFG.DragDrop.PurchaseItem"),
+                  callback: async (that) => {
+                    if (cost > 0) {
+                      await this.object.update({
+                        system: {
+                          experience: {
+                            available: availableXP - cost,
+                          }
                         }
-                      }
-                    });
-                    await xpLogSpend(
+                      });
+                      await xpLogSpend(
                         this.actor, `${game.i18n.localize("SWFFG.DragDrop.XPLog")} ${itemData.type} ${itemData.name}`,
                         cost,
                         this.actor.system.experience.available,
                         this.actor.system.experience.total
-                    );
-                  }
+                      );
+                    }
+                  },
+                },
+                grant: {
+                  icon: '<i class="fas fa-recycle"></i>',
+                  label: game.i18n.localize("SWFFG.DragDrop.GrantItem"),
                 },
               },
-              grant: {
-                icon: '<i class="fas fa-recycle"></i>',
-                label: game.i18n.localize("SWFFG.DragDrop.GrantItem"),
-              },
             },
-          },
-          {
-            classes: ["dialog", "starwarsffg"],
-          }
-        ).render(true);
+            {
+              classes: ["dialog", "starwarsffg"],
+            }
+          ).render(true);
         }
       }
 
@@ -233,7 +224,7 @@ export class ActorSheetFFG extends ActorSheet {
         if (data.data.stats.credits.value > 999) {
           data.data.stats.credits.value = data.data.stats.credits.value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
         }
-        data.data.enrichedBio = await TextEditor.enrichHTML(this.actor.system.biography, {secrets: !data.limited});
+        data.data.enrichedBio = await TextEditor.enrichHTML(this.actor.system.biography, { secrets: !data.limited });
         data.data.general.enrichedNotes = await TextEditor.enrichHTML(this.actor.system.general?.notes) || "";
         data.data.general.enrichedFeatures = await TextEditor.enrichHTML(this.actor.system.general?.features) || "";
         data.maxAttribute = game.settings.get("starwarsffg", "maxAttribute");
@@ -278,8 +269,8 @@ export class ActorSheetFFG extends ActorSheet {
     if (this.actor.type !== "vehicle" && this.actor.type !== "homestead") {
       // Filter out skills that are not custom (manually added) or part of the current system skill list
       Object.keys(data.data.skills)
-      .filter(s => !data.data.skills[s].custom && !CONFIG.FFG.skills[s])
-      .forEach(s => delete data.data.skills[s]);
+        .filter(s => !data.data.skills[s].custom && !CONFIG.FFG.skills[s])
+        .forEach(s => delete data.data.skills[s]);
 
       data.data.skilllist = this._createSkillColumns(data);
     }
@@ -307,8 +298,8 @@ export class ActorSheetFFG extends ActorSheet {
    * @returns {*}
    */
   static sortForActorSheet(items) {
-    return items.sort(function(a, b) {
-       return a.name.localeCompare(b.name);
+    return items.sort(function (a, b) {
+      return a.name.localeCompare(b.name);
     });
   }
 
@@ -444,9 +435,9 @@ export class ActorSheetFFG extends ActorSheet {
     }
 
     new ContextMenu(
-        html,
-        ".skillsGrid .skill",
-        contextMenuOptions,
+      html,
+      ".skillsGrid .skill",
+      contextMenuOptions,
     );
 
     html.find(".skill-purchase").click(async (ev) => {
@@ -674,49 +665,49 @@ export class ActorSheetFFG extends ActorSheet {
 
     html.find(".resetMedical").click(async (ev) => {
       if (game.settings.get("starwarsffg", "HealingItemAction") === '0') {
-          // prompt
-          // show a prompt asking what the user wants to do
-          new Dialog(
-              {
-                  title: game.i18n.localize("SWFFG.MedicalItemNameUseTitle"),
-                  buttons: {
-                      done: {
-                          icon: '<i class="fas fa-hourglass"></i>',
-                          label: game.i18n.localize("SWFFG.MedicalItemNameUseRest"),
-                          callback: (that) => {
-                              // rest
-                              let updateData = {};
-                              foundry.utils.setProperty(updateData, `system.stats.medical.uses`, 0);
-                              foundry.utils.setProperty(updateData, `system.stats.strain.value`, 0);
-                              foundry.utils.setProperty(updateData, `system.stats.wounds.value`, Math.max(0, this.object.system.stats.wounds.value - 1));
-                              this.object.update(updateData);
-                              ChatMessage.create({
-                                speaker: { alias: this.object.name },
-                                content: `<i>${game.i18n.localize("SWFFG.MedicalItemRest")}</i>`,
-                              });
-                          },
-                      },
-                      cancel: {
-                          icon: '<i class="fas fa-recycle"></i>',
-                          label: game.i18n.localize("SWFFG.MedicalItemNameUseReset"),
-                          callback: (that) => {
-                              // reset
-                              let updateData = {};
-                              foundry.utils.setProperty(updateData, `system.stats.medical.uses`, 0);
-                              this.object.update(updateData);
-                              const item_name = this.object?.flags?.starwarsffg?.config?.medicalItemName || game.i18n.localize("SWFFG.DefaultMedicalItemName");
-                              ChatMessage.create({
-                                speaker: { alias: this.object.name },
-                                content: `<i>${game.i18n.localize("SWFFG.MedicalItemResetStart")} ${item_name} ${game.i18n.localize("SWFFG.MedicalItemResetEnd")}</i>`,
-                              });
-                          },
-                      },
-                  },
+        // prompt
+        // show a prompt asking what the user wants to do
+        new Dialog(
+          {
+            title: game.i18n.localize("SWFFG.MedicalItemNameUseTitle"),
+            buttons: {
+              done: {
+                icon: '<i class="fas fa-hourglass"></i>',
+                label: game.i18n.localize("SWFFG.MedicalItemNameUseRest"),
+                callback: (that) => {
+                  // rest
+                  let updateData = {};
+                  foundry.utils.setProperty(updateData, `system.stats.medical.uses`, 0);
+                  foundry.utils.setProperty(updateData, `system.stats.strain.value`, 0);
+                  foundry.utils.setProperty(updateData, `system.stats.wounds.value`, Math.max(0, this.object.system.stats.wounds.value - 1));
+                  this.object.update(updateData);
+                  ChatMessage.create({
+                    speaker: { alias: this.object.name },
+                    content: `<i>${game.i18n.localize("SWFFG.MedicalItemRest")}</i>`,
+                  });
+                },
               },
-              {
-                  classes: ["dialog", "starwarsffg"],
-              }
-          ).render(true);
+              cancel: {
+                icon: '<i class="fas fa-recycle"></i>',
+                label: game.i18n.localize("SWFFG.MedicalItemNameUseReset"),
+                callback: (that) => {
+                  // reset
+                  let updateData = {};
+                  foundry.utils.setProperty(updateData, `system.stats.medical.uses`, 0);
+                  this.object.update(updateData);
+                  const item_name = this.object?.flags?.starwarsffg?.config?.medicalItemName || game.i18n.localize("SWFFG.DefaultMedicalItemName");
+                  ChatMessage.create({
+                    speaker: { alias: this.object.name },
+                    content: `<i>${game.i18n.localize("SWFFG.MedicalItemResetStart")} ${item_name} ${game.i18n.localize("SWFFG.MedicalItemResetEnd")}</i>`,
+                  });
+                },
+              },
+            },
+          },
+          {
+            classes: ["dialog", "starwarsffg"],
+          }
+        ).render(true);
       } else if (game.settings.get("starwarsffg", "HealingItemAction") === '1') {
         // rest
         let updateData = {};
@@ -1072,7 +1063,7 @@ export class ActorSheetFFG extends ActorSheet {
         return;
       }
       const crewSheet = game.actors.get(crew_id)?.sheet;
-      const starting_pool = {'difficulty': 2};
+      const starting_pool = { 'difficulty': 2 };
 
       const registeredRoles = await game.settings.get('starwarsffg', 'arrayCrewRoles');
       // look up the defined metadata for the assigned role
@@ -1119,7 +1110,7 @@ export class ActorSheetFFG extends ActorSheet {
             label: raw_weapons[i].name,
             callback: async (html) => {
               const skill = raw_weapons[i].system.skill.value;
-              let pool = new DicePoolFFG({'difficulty': 2});
+              let pool = new DicePoolFFG({ 'difficulty': 2 });
               pool = get_dice_pool(crew_id, skill, pool);
               pool = await DiceHelpers.getModifiers(pool, raw_weapons[i]);
               await DiceHelpers.displayRollDialog(
@@ -1305,14 +1296,14 @@ export class ActorSheetFFG extends ActorSheet {
 
     html.find(".force-conflict .enable-dice-pool").on("click", async (event) => {
       event.preventDefault();
-      await this.actor.setFlag('starwarsffg', 'config', {enableForcePool: true});
+      await this.actor.setFlag('starwarsffg', 'config', { enableForcePool: true });
     });
 
     html.find(".force-conflict .remove-force-powers").on("click", async (event) => {
       event.preventDefault();
       const itemsToDelete = this.actor.items.filter((i) => (i.type === "forcepower"));
       itemsToDelete.forEach((i) => {
-          this.actor.items.get(i.id).delete();
+        this.actor.items.get(i.id).delete();
       });
     });
   }
@@ -1325,7 +1316,7 @@ export class ActorSheetFFG extends ActorSheet {
    * @returns {Promise<void>}
    */
   async vehicleCrewGunneryRoll(weapon, weaponSkill, selectedGunner) {
-    const starting_pool = {'difficulty': 2};
+    const starting_pool = { 'difficulty': 2 };
     const ship = this.actor;
     const crewSheet = game.actors.get(selectedGunner.actor_id)?.sheet;
     // create chat card data
@@ -1615,14 +1606,16 @@ export class ActorSheetFFG extends ActorSheet {
     const dialog = new Dialog(
       {
         title: game.i18n.localize("SWFFG.Actors.Sheets.Purchase.SkillRank.ConfirmTitle"),
-        content: game.i18n.format("SWFFG.Actors.Sheets.Purchase.SkillRank.Text", {cost: cost, skill: skill, old: curRank, new: curRank + 1}),
+        content: game.i18n.format("SWFFG.Actors.Sheets.Purchase.SkillRank.Text", { cost: cost, skill: skill, old: curRank, new: curRank + 1 }),
         buttons: {
           done: {
             icon: '<i class="fa-regular fa-circle-up"></i>',
             label: game.i18n.localize("SWFFG.Actors.Sheets.Purchase.ConfirmPurchase"),
             callback: async (that) => {
-              const id = await this._spendXp(`system.skills.${skill}.rank`, 1, cost);
-              await xpLogSpend(game.actors.get(this.object.id), `skill rank ${skill} ${curRank} --> ${curRank + 1}`, cost, availableXP - cost, totalXP, id);
+              XPPurchaseHelpers.addPurchase(this.object, cost, `skill rank ${skill} ${curRank} --> ${curRank + 1}`, async (uuid) => {
+                await xpLogSpend(game.actors.get(this.object.id), `skill rank ${skill} ${curRank} --> ${curRank + 1}`, cost, availableXP - cost, totalXP, uuid);
+              }, `system.skills.${skill}.rank`, 1);
+
             },
           },
           cancel: {
@@ -1636,36 +1629,6 @@ export class ActorSheetFFG extends ActorSheet {
       }
     ).render(true);
   }
-
-  /**
-   * Creates an Active Effect for a purchased upgrade (e.g., a skill rank)
-   * Using this function allows the XP log to undo purchased upgrades
-   * @param boughtPath - the path to the attribute being modified by the purchase
-   * @param boughtValue - the amount to change the attribute by
-   * @param spentXP - the amount of XP this purchase costs
-   * @returns {Promise<string>} - the ID of the Active Effect created for this purchase
-   */
-  async _spendXp(boughtPath, boughtValue, spentXP) {
-    const spentId = foundry.utils.randomID();
-    const effects = {
-      name: `purchased-${spentId}`,
-      changes: [
-        {
-          key: boughtPath,
-          mode: CONST.ACTIVE_EFFECT_MODES.ADD,
-          value: boughtValue,
-        },
-        {
-          key: "system.experience.available",
-          mode: CONST.ACTIVE_EFFECT_MODES.ADD,
-          value: spentXP * -1,
-        }
-      ],
-    };
-    await this.object.createEmbeddedDocuments("ActiveEffect", [effects]);
-    return spentId;
-  }
-
   /**
    * Locates and deletes the Active Effect for a purchased upgrade (e.g., a skill rank)
    * Using this function deletes the AE and generates a lot event for the refund. It does not notify the GM
@@ -1675,7 +1638,8 @@ export class ActorSheetFFG extends ActorSheet {
    */
   async _refundPurchase(purchaseId, mode) {
     CONFIG.logger.debug(`refunding ${mode} for ${purchaseId}`);
-    const purchasedEffect = this.object.getEmbeddedCollection("ActiveEffect").find(ae => ae.name.includes(purchaseId));
+    const effects = this.object.getEmbeddedCollection("ActiveEffect");
+    const purchasedEffect = effects.find(ae => ae.name.includes(purchaseId));
     if (purchasedEffect) {
       const dialog = new Dialog(
         {
@@ -1686,7 +1650,7 @@ export class ActorSheetFFG extends ActorSheet {
               icon: '<i class="fa-solid fa-check"></i>',
               label: game.i18n.localize("SWFFG.Actors.Sheets.Refund.Confirm"),
               callback: async (that) => {
-                await this.object.deleteEmbeddedDocuments("ActiveEffect", [purchasedEffect.id]);
+                await XPPurchaseHelpers.refundPurchase(this.object, purchaseId);
                 CONFIG.logger.debug("deleted AE, updating log");
                 let logEntries = this.object.getFlag("starwarsffg", "xpLog") || [];
                 let cost = 0;
@@ -1907,7 +1871,7 @@ export class ActorSheetFFG extends ActorSheet {
   async _updateSpecialization(data) {
     CONFIG.logger.debug(`Running Actor initial load`);
     if (this.actor.flags.starwarsffg === undefined) {
-        this.actor.flags.starwarsffg = {};
+      this.actor.flags.starwarsffg = {};
     }
     this.actor.flags.starwarsffg.loaded = true;
 
@@ -2099,14 +2063,14 @@ export class ActorSheetFFG extends ActorSheet {
       } else if (increasedCost > availableXP) {
         outCareer = [];
       }
-      itemType =  game.i18n.localize("TYPES.Item.specialization");
+      itemType = game.i18n.localize("TYPES.Item.specialization");
       groups.push("Universal");
       groups.push("In Career");
       groups.push("Out of Career");
       content = await renderTemplate(template, { inCareer, outCareer, universal, baseCost, increasedCost, itemType: itemType, itemCategory: "specialization", groups: groups });
     } else if (action === "signatureability") {
       const sources = game.settings.get("starwarsffg", "signatureAbilityCompendiums").split(",");
-      const rawSelectableItems =  this.object.items.find(i => i.type === "career").system.signatureabilities;
+      const rawSelectableItems = this.object.items.find(i => i.type === "career").system.signatureabilities;
       const sigAbilityNames = Object.values(rawSelectableItems).map(i => i.name);
       let selectableItems = [];
       // pull items out of the world
@@ -2233,17 +2197,17 @@ export class ActorSheetFFG extends ActorSheet {
       let worldItemsPack = [];
       for (const worldItem of worldItems) {
         const purchasedItem = purchasedItems.find((pItem) => pItem.name === worldItem.name)
-        if(!purchasedItem || purchasedItem.isRanked) {
+        if (!purchasedItem || purchasedItem.isRanked) {
           worldItemsPack.push({
             name: worldItem.name,
             id: worldItem.id,
             source: worldItem.uuid,
-            cost: purchasedItem?.isRanked ? worldItem.system.tier * 5 + 5 * purchasedItem.rank: worldItem.system.tier * 5,
+            cost: purchasedItem?.isRanked ? worldItem.system.tier * 5 + 5 * purchasedItem.rank : worldItem.system.tier * 5,
           });
         }
       }
       worldItemsPack = sortDataBy(worldItemsPack, "name");
-      selectableItems.push({pack: game.i18n.localize("SWFFG.Actors.Sheets.Purchase.Talent.WorldItemsGroup"), items: worldItemsPack});
+      selectableItems.push({ pack: game.i18n.localize("SWFFG.Actors.Sheets.Purchase.Talent.WorldItemsGroup"), items: worldItemsPack });
 
       for (const source of sources) {
         const pack = game.packs.get(source);
@@ -2254,17 +2218,17 @@ export class ActorSheetFFG extends ActorSheet {
         const items = await pack.getDocuments();
         for (const item of items) {
           const purchasedItem = purchasedItems.find((pItem) => pItem.name === item.name)
-          if(!purchasedItem || purchasedItem.isRanked) {
+          if (!purchasedItem || purchasedItem.isRanked) {
             packItems.push({
               name: item.name,
               id: item.id,
               source: item.uuid,
-              cost: purchasedItem?.isRanked ? item.system.tier * 5 + 5 * purchasedItem.rank: item.system.tier * 5,
+              cost: purchasedItem?.isRanked ? item.system.tier * 5 + 5 * purchasedItem.rank : item.system.tier * 5,
             });
           }
         }
         packItems = sortDataBy(packItems, "name");
-        selectableItems.push({pack: pack.metadata.label, items: packItems});
+        selectableItems.push({ pack: pack.metadata.label, items: packItems });
       }
       itemType = game.i18n.localize("TYPES.Item.talent");
       content = await renderTemplate(template, { selectableItems, itemType: itemType, itemCategory: "talent" });
@@ -2281,8 +2245,8 @@ export class ActorSheetFFG extends ActorSheet {
     }
 
     const dialog = new Dialog(
-    {
-        title: game.i18n.format("SWFFG.Actors.Sheets.Purchase.DialogTitle", {itemType: itemType}),
+      {
+        title: game.i18n.format("SWFFG.Actors.Sheets.Purchase.DialogTitle", { itemType: itemType }),
         content: content,
         buttons: {
           done: {
@@ -2304,7 +2268,7 @@ export class ActorSheetFFG extends ActorSheet {
                 const currentForceRating = parseInt(this.actor.system.stats.forcePool.max);
                 const requiredForceRating = parseInt(purchasedItem.system.required_force_rating);
                 if (currentForceRating < requiredForceRating) {
-                  ui.notifications.warn(game.i18n.format("SWFFG.Actors.Sheets.Purchase.FP.FRTooLow", {forceRating: currentForceRating, requiredForceRating: requiredForceRating}));
+                  ui.notifications.warn(game.i18n.format("SWFFG.Actors.Sheets.Purchase.FP.FRTooLow", { forceRating: currentForceRating, requiredForceRating: requiredForceRating }));
                   return;
                 }
               }
@@ -2336,7 +2300,7 @@ export class ActorSheetFFG extends ActorSheet {
     // this is the current value of the characteristic (including Active Effects)
     const characteristicValue = this.actor.system.characteristics[characteristic].value;
     // this is the value without items that modify it
-    const characteristicWithoutAEs =  this.object.toObject().system.characteristics[characteristic].value;
+    const characteristicWithoutAEs = this.object.toObject().system.characteristics[characteristic].value;
 
     if (characteristicValue >= game.settings.get("starwarsffg", "maxAttribute")) {
       ui.notifications.warn(game.i18n.localize("SWFFG.Actors.Sheets.Purchase.Characteristic.Max"));
@@ -2351,15 +2315,17 @@ export class ActorSheetFFG extends ActorSheet {
     }
     const dialog = new Dialog(
       {
-        title: game.i18n.format("SWFFG.Actors.Sheets.Purchase.Characteristic.ConfirmTitle", {characteristic: characteristic}),
-        content: game.i18n.format("SWFFG.Actors.Sheets.Purchase.Characteristic.ConfirmText", {cost: cost, level: characteristicValue + 1, characteristic: characteristic}),
+        title: game.i18n.format("SWFFG.Actors.Sheets.Purchase.Characteristic.ConfirmTitle", { characteristic: characteristic }),
+        content: game.i18n.format("SWFFG.Actors.Sheets.Purchase.Characteristic.ConfirmText", { cost: cost, level: characteristicValue + 1, characteristic: characteristic }),
         buttons: {
           done: {
             icon: '<i class="fa-regular fa-circle-up"></i>',
             label: game.i18n.localize("SWFFG.Actors.Sheets.Purchase.ConfirmPurchase"),
             callback: async (that) => {
-              const statusId = await this._spendXp(`system.characteristics.${characteristic}.value`, 1, cost);
-              await xpLogSpend(game.actors.get(this.object.id), `characteristic ${characteristic} level ${characteristicValue} --> ${characteristicValue + 1}`, cost, availableXP - cost, totalXP, statusId);
+              XPPurchaseHelpers.addPurchase(this.object, cost, `characteristic ${characteristic} level ${characteristicValue} --> ${characteristicValue + 1}`, async (uuid) => {
+                await xpLogSpend(game.actors.get(this.object.id), `characteristic ${characteristic} level ${characteristicValue} --> ${characteristicValue + 1}`, cost, availableXP - cost, totalXP, uuid);
+              }, `system.characteristics.${characteristic}.value`, 1);
+
               await this.render(true);
             },
           },
@@ -2388,9 +2354,9 @@ export class ActorSheetFFG extends ActorSheet {
     const currentHealth = this.actor.system.stats.wounds.value;
     if (target.hasClass("kill-minion")) {
       let damageAmount = minionHealth - (currentHealth % minionHealth) + 1;
-      await this.actor.update({'system.stats.wounds.value': currentHealth + damageAmount});
+      await this.actor.update({ 'system.stats.wounds.value': currentHealth + damageAmount });
     } else if (target.hasClass("kill-group")) {
-      await this.actor.update({'system.stats.wounds.value': this.actor.system.stats.wounds.max + 1});
+      await this.actor.update({ 'system.stats.wounds.value': this.actor.system.stats.wounds.max + 1 });
     }
   }
 
@@ -2413,22 +2379,19 @@ export class ActorSheetFFG extends ActorSheet {
           icon: '<i class="fas fa-check"></i>',
           label: game.i18n.localize("SWFFG.XP.Adjust.Confirm"),
           callback: async () => {
-            const startingAvailableXP =  parseInt(this.actor.system.experience.available);
-            const totalXP =  parseInt(this.actor.system.experience.total);
             const adjustAmount = parseInt($("#adjustAmount").val());
             const adjustReason = $("#adjustReason").val();
-            const updatedAvailableXP = startingAvailableXP + adjustAmount;
-            const updatedTotalXP = totalXP + adjustAmount;
-            const statusId = await this._spendXp("system.experience.total", adjustAmount, adjustAmount * -1);
-            await xpLogEarn(this.object, adjustAmount, updatedAvailableXP, updatedTotalXP, adjustReason, "Self", statusId);
+            await XPHelpers.changeActorXpAsync(this.actor, adjustAmount, async (updatedTotalXp, updatedAvailableXP) => {
+              await xpLogEarn(this.object, adjustAmount, updatedAvailableXP, updatedTotalXp, adjustReason, "Self");
+            });
             await this.render(true);
-         }
+          }
+        },
+        two: {
+          icon: '<i class="fas fa-times"></i>',
+          label: "Cancel",
+        }
       },
-      two: {
-       icon: '<i class="fas fa-times"></i>',
-       label: "Cancel",
-      }
-     },
     });
     d.render(true);
   }
@@ -2441,7 +2404,7 @@ export class ActorSheetFFG extends ActorSheet {
  * @returns {*}
  */
 function sortDataBy(data, byKey) {
- return data.sort((a, b) => {
+  return data.sort((a, b) => {
     if (a[byKey] < b[byKey]) {
       return -1;
     }
@@ -2449,7 +2412,7 @@ function sortDataBy(data, byKey) {
       return 1;
     }
     return 0;
- });
+  });
 }
 
 /**

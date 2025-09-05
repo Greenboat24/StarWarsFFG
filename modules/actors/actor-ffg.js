@@ -1,5 +1,6 @@
 import PopoutEditor from "../popout-editor.js";
 import ModifierHelpers from "../helpers/modifiers.js";
+import XPHelpers from "../helpers/xp-helpers.js";
 
 /**
  * Extend the base Actor entity.
@@ -44,7 +45,6 @@ export class ActorFFG extends Actor {
     }
     return super.create(createData, options);
   }
-
   /** @override **/
   async _preCreate(data, operation, user) {
     const defaultImages = {
@@ -122,21 +122,19 @@ export class ActorFFG extends Actor {
       const updatedWillpower = changes.system?.characteristics?.Willpower?.value;
       if (originalWillpower !== undefined && updatedWillpower !== undefined && originalWillpower !== updatedWillpower) {
         CONFIG.logger.debug(`Detected modified Willpower (${originalWillpower} -> ${updatedWillpower}, updating derived values`);
-        if (system.stats?.strain) {
-          // get the soak without willpower modifying it, then add the new willpower value in
-          const originalStrain = this.system.stats?.strain.max;
-          const originalStrainWithoutWillpower = originalStrain - originalWillpower;
-          const updatedStrain = originalStrainWithoutWillpower + updatedWillpower;
-          CONFIG.logger.debug(`The character sheet showed ${originalStrain} strain, while that value without Willpower was ${originalStrainWithoutWillpower}. Updating to be ${updatedStrain}`);
-          changes.system.stats = foundry.utils.mergeObject(
-            changes.system.stats,
-            {
-              strain: {
-                max: updatedStrain,
-              }
+        // get the soak without willpower modifying it, then add the new willpower value in
+        const originalStrain = this.system.stats?.strain.max;
+        const originalStrainWithoutWillpower = originalStrain - originalWillpower;
+        const updatedStrain = originalStrainWithoutWillpower + updatedWillpower;
+        CONFIG.logger.debug(`The character sheet showed ${originalStrain} strain, while that value without Willpower was ${originalStrainWithoutWillpower}. Updating to be ${updatedStrain}`);
+        changes.system.stats = foundry.utils.mergeObject(
+          changes.system.stats,
+          {
+            strain: {
+              max: updatedStrain,
             }
-          );
-        }
+          }
+        );
       }
     }
     await super._preUpdate(changes, options, user);
@@ -330,6 +328,10 @@ export class ActorFFG extends Actor {
    */
   _prepareCharacterData(actorData) {
     const data = actorData;
+    // Set XP level based on purchases
+    if(data.system){
+      data.system.experience.available = XPHelpers.getActorAvailableXp(this);
+    }
 
     // Build complete talent list.
 
