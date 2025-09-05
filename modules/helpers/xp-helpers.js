@@ -10,7 +10,6 @@ export default class XPHelpers {
         if (!actor || !amount) return;
         const availableXp = parseInt(actor.system.experience.available);
         const newXp = availableXp + parseInt(amount);
-        await actor.update({ 'system.experience.available': newXp });
         const totalXp = parseInt(actor.system.experience.total) + parseInt(amount);
         await actor.update({ 'system.experience.total': totalXp });
         if (callback) await callback(totalXp, newXp);
